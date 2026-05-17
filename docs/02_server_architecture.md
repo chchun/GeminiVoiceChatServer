@@ -72,16 +72,20 @@ GeminiVoiceChatServer/
 │   ├── services/                   # 순수 비즈니스 로직 계층 (1~2단계 중심)
 │   │   ├── __init__.py
 │   │   └── gemini_service.py       # Gemini API 스트리밍 래퍼 클래스
-│   └── agents/                     # 고급 AI 에기전트 워크플로우 계층 (3~5단계 확장용)
+│   └── agents/                     # 고급 AI 에이전트 워크플로우 계층 (3~5단계 확장용)
 │       ├── __init__.py
 │       ├── router_agent.py         # 4단계: 멀티 에이전트 라우팅 노드
 │       ├── rag_agent.py            # 3단계: LangGraph + Chroma DB RAG 노드
 │       └── rdb_agent.py            # 5단계: SQL Generation 및 DB 조회 노드
+├── scripts/
+│   └── ws_smoke.py                 # WebSocket 통합 스모크 테스트 (5개 시나리오)
+├── Dockerfile                      # Cloud Run 배포용 컨테이너 이미지 (python:3.12-slim)
+├── .dockerignore                   # Docker 빌드 제외 파일 목록
 ├── .env                            # 환경 변수 로컬 설정 파일 (Git 제외)
 ├── .env.example                    # 환경 변수 공유용 샘플 파일
 ├── .gitignore                      # venv, .env, __pycache__ 제외 설정
 ├── requirements.txt                # 의존성 라이브러리 목록
-└── venv/                           # Python 파이썬 가상환경 폴더
+└── venv/                           # Python 가상환경 폴더
 
 ```
 
@@ -148,7 +152,42 @@ GeminiVoiceChatServer/
 
 ---
 
-## 6. 코드 작성 제약 조건
+## 6. 배포 환경 (Google Cloud Run)
+
+### 6.1 배포 구조
+
+```
+GitHub (master)
+    │  gcloud run deploy --source .
+    ▼
+Artifact Registry (Docker Image)
+    │
+    ▼
+Cloud Run (asia-northeast3)
+  - 서비스명: gemini-voice-chat-server
+  - 포트: 8000 (컨테이너 내부), 443 (외부 TLS)
+  - session-affinity: 활성화 (WebSocket 연결 고정)
+  - timeout: 3600s
+  - min-instances: 0 (비용 절감)
+```
+
+### 6.2 로컬 vs Cloud Run 엔드포인트
+
+| 환경 | 프로토콜 | 엔드포인트 예시 |
+|------|----------|----------------|
+| 로컬 개발 | `ws://` | `ws://localhost:8000/ws?api_key=...` |
+| Cloud Run | `wss://` | `wss://gemini-voice-chat-server-xxx.asia-northeast3.run.app/ws?api_key=...` |
+
+### 6.3 WebSocket Keepalive 전략
+
+Cloud Run 로드밸런서의 idle 연결 종료를 방지하기 위해 클라이언트(OkHttp) 레벨에서 처리:
+- Android OkHttp `pingInterval(20s)` — WebSocket 프로토콜 레벨 PING 프레임 전송
+- 서버는 Starlette/uvicorn이 PONG을 자동 응답, 별도 서버 코드 불필요
+- Samsung One UI 백그라운드 socket reaping 대응: `ProcessLifecycleOwner.ON_START` 시 자동 재연결
+
+---
+
+## 7. 코드 작성 제약 조건
 
 * Claude Code는 현재 **[1단계]** 구현에 집중하되, 3단계 이상의 `LangGraph` 및 에이전트 아키텍처가 플러그인 형태로 유연하게 결합될 수 있도록 `services/gemini_service.py`를 독립적인 모듈로 추상화하여 구현해야 한다.
 * 모든 I/O 작업(WebSocket 수신/송신, Gemini API 호출)은 반드시 `async/await` 패턴을 사용하여 비동기로 처리해야 하며, 서버 스레드가 블로킹되는 코드를 작성해서는 안 된다.
