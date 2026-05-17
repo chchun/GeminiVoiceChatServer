@@ -3,6 +3,7 @@
 WebSocket endpoint: /ws?api_key=<WS_API_KEY>
 Authoritative spec: D:/dev/GeminiVoiceChat/app/docs/03_server_api.md
 """
+import asyncio
 import json
 import logging
 import uuid
@@ -78,7 +79,12 @@ async def websocket_endpoint(websocket: WebSocket, api_key: str = Query(default=
 
     try:
         while True:
-            raw = await websocket.receive_text()
+            try:
+                raw = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                # keepalive: prevent Cloud Run load balancer from closing idle connections
+                await websocket.send_text('{"type":"ping"}')
+                continue
             ts_recv = now_ms()
 
             try:
