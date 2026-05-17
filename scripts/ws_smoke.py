@@ -201,7 +201,8 @@ async def main() -> int:
         print(f"{RED}ERROR: WS_API_KEY not set (check .env at {PROJECT_ROOT / '.env'}){RESET}")
         return 2
 
-    base_url = f"ws://{args.host}:{args.port}"
+    scheme = "wss" if args.port == 443 else "ws"
+    base_url = f"{scheme}://{args.host}:{args.port}"
     good_url = f"{base_url}/ws?api_key={api_key}"
 
     print(f"{CYAN}Target: {base_url}{RESET}")
